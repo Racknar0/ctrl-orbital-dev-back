@@ -1,0 +1,2 @@
+-- Espacio para el SQL inicial del proyecto.
+-- Define aquí extensiones, roles o datos base cuando se acuerde el modelo de datos.

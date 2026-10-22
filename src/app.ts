@@ -4,6 +4,7 @@ import { errorHandler } from './middlewares/errorHandler.js';
 import { notFound } from './middlewares/notFound.js';
 import authRoutes from './routes/auth/auth.routes.js';
 import userRoutes from './routes/users/user.routes.js';
+import quickRoomRoutes from './routes/quickRooms/quickRoom.routes.js';
 
 const app = express();
 
@@ -25,6 +26,7 @@ app.get('/api/health', (_request, response) => {
 });
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
+app.use('/api/quick-rooms', quickRoomRoutes);
 app.use(notFound);
 app.use(errorHandler);
 

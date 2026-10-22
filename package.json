@@ -11,7 +11,8 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "db:seed": "tsx prisma/seed.ts"
+    "db:seed": "tsx prisma/seed.ts",
+    "test:salas-rapidas": "npm run build && node --test tests/salas-rapidas.integracion.test.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

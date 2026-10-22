@@ -67,3 +67,98 @@ model AuthToken {
 
   @@index([userId, type])
 }
+
+enum QuickRoomStatus {
+  OPEN
+  CLOSED
+}
+
+enum QuickRoomRole {
+  OWNER
+  MEMBER
+}
+
+enum QuickRoomSettlementStatus {
+  REPORTED
+  CONFIRMED
+}
+
+model QuickRoom {
+  id             String                 @id @default(uuid())
+  name           String
+  currency       String                 @default("COP")
+  invitationCode String                 @unique
+  status         QuickRoomStatus        @default(OPEN)
+  expiresAt      DateTime
+  closedAt       DateTime?
+  createdAt      DateTime               @default(now())
+  updatedAt      DateTime               @updatedAt
+  participants   QuickRoomParticipant[]
+  expenses       QuickRoomExpense[]
+  settlements    QuickRoomSettlement[]
+}
+
+model QuickRoomParticipant {
+  id               String                  @id @default(uuid())
+  roomId           String
+  displayName      String
+  role             QuickRoomRole           @default(MEMBER)
+  guestTokenHash   String                   @unique
+  paymentMethod    String?
+  paymentReference String?
+  paymentHolder    String?
+  createdAt        DateTime                 @default(now())
+  room             QuickRoom               @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  paidExpenses     QuickRoomExpense[]       @relation("QuickRoomPayer")
+  createdExpenses  QuickRoomExpense[]       @relation("QuickRoomCreator")
+  shares           QuickRoomExpenseShare[]
+  sentPayments     QuickRoomSettlement[]    @relation("QuickRoomSender")
+  receivedPayments QuickRoomSettlement[]    @relation("QuickRoomReceiver")
+
+  @@index([roomId])
+}
+
+model QuickRoomExpense {
+  id                     String                  @id @default(uuid())
+  roomId                 String
+  paidByParticipantId    String
+  createdByParticipantId String
+  description            String
+  amount                 Decimal                 @db.Decimal(14, 2)
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  room                   QuickRoom               @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  paidBy                 QuickRoomParticipant    @relation("QuickRoomPayer", fields: [paidByParticipantId], references: [id])
+  createdBy              QuickRoomParticipant    @relation("QuickRoomCreator", fields: [createdByParticipantId], references: [id])
+  shares                 QuickRoomExpenseShare[]
+
+  @@index([roomId])
+}
+
+model QuickRoomExpenseShare {
+  id            String               @id @default(uuid())
+  expenseId     String
+  participantId String
+  amount        Decimal              @db.Decimal(14, 2)
+  expense       QuickRoomExpense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  participant   QuickRoomParticipant @relation(fields: [participantId], references: [id])
+
+  @@unique([expenseId, participantId])
+  @@index([participantId])
+}
+
+model QuickRoomSettlement {
+  id                String                    @id @default(uuid())
+  roomId            String
+  fromParticipantId String
+  toParticipantId   String
+  amount            Decimal                   @db.Decimal(14, 2)
+  status            QuickRoomSettlementStatus  @default(REPORTED)
+  confirmedAt       DateTime?
+  createdAt         DateTime                  @default(now())
+  room              QuickRoom                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  fromParticipant   QuickRoomParticipant      @relation("QuickRoomSender", fields: [fromParticipantId], references: [id])
+  toParticipant     QuickRoomParticipant      @relation("QuickRoomReceiver", fields: [toParticipantId], references: [id])
+
+  @@index([roomId])
+}

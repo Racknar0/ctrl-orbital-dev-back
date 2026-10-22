@@ -54,3 +54,23 @@ Completa en `.env` `SMTP_USER` con la cuenta Gmail y `SMTP_PASS` con su App Pass
 - **Para después:** Multer si se habilitan cargas de archivos; Sharp o PDFKit si se necesitan imágenes o documentos.
 
 Los tokens de acceso se guardan en `sessionStorage` en el navegador durante esta primera integración.
+
+## Salas rápidas locales
+
+La migración `20261024000000_add_quick_rooms` agrega salas, participantes invitados, gastos, repartos y pagos. No vincula las salas a cuentas ni espacios de trabajo.
+
+- Las salas permiten actividad durante 30 días; después quedan en consulta. El organizador puede cerrarlas antes. No hay eliminación automática de salas en esta fase.
+- El acceso requiere una credencial de invitado por sala en `X-Room-Token`; el código de invitación permite unirse, pero no suplantar una participación existente.
+- Los importes se guardan como `Decimal(14,2)` y se reparten en centavos exactos entre los participantes seleccionados. Quienes se unan después no alteran los repartos anteriores.
+- Solo el autor de un gasto o el organizador puede corregirlo/eliminarlo antes de reportar pagos. Se pueden agregar gastos nuevos después de pagar. Los pagos confirmados son definitivos en esta fase.
+- Los datos para recibir transferencias son opcionales y visibles para los participantes. Las transferencias y su confirmación son manuales.
+
+API base: `/api/quick-rooms`. `POST /` crea una sala; `POST /:code/join` incorpora un invitado; `GET /:code` consulta la sala; `PATCH /:code/me` actualiza el perfil; `POST /:code/close` cierra la sala. Los recursos `/:code/expenses` y `/:code/payments` permiten registrar gastos y pagos. La recepción se confirma con `POST /:code/payments/:id/confirm`.
+
+### Pruebas de integración
+
+```sh
+npm run test:salas-rapidas
+```
+
+Compila y ejecuta ocho casos con HTTP real, PostgreSQL y `node:test`: creación/validación, privacidad e identidad por sala, reparto exacto e ingreso posterior, edición/eliminación, pagos concurrentes y confirmación, cancelación/cierre, vencimiento/CORS y límite de intentos. Inicia su propia API en un puerto libre y elimina únicamente las salas creadas por la suite. Por protección, solo acepta `app_gastos` en PostgreSQL local; requiere las migraciones aplicadas.

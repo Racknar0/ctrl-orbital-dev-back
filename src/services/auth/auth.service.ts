@@ -1,5 +1,6 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
+import type { PlatformRole } from '@prisma/client';
 import { prisma } from '../../utils/prisma.js';
 
 export class AuthError extends Error {
@@ -29,10 +30,11 @@ const getJwtSecret = (): string => {
 const createAccessToken = (userId: string): string =>
   jwt.sign({}, getJwtSecret(), { subject: userId, expiresIn: '7d' });
 
-const publicUser = (user: { id: string; name: string; email: string }) => ({
+const publicUser = (user: { id: string; name: string; email: string; platformRole: PlatformRole }) => ({
   id: user.id,
   name: user.name,
   email: user.email,
+  platformRole: user.platformRole,
 });
 
 export const register = async (input: RegisterInput) => {
@@ -53,13 +55,13 @@ export const register = async (input: RegisterInput) => {
     const user = await prisma.$transaction(async (transaction) => {
       const createdUser = await transaction.user.create({
         data: { name, email, passwordHash },
-        select: { id: true, name: true, email: true },
+        select: { id: true, name: true, email: true, platformRole: true },
       });
       const workspace = await transaction.workspace.create({ data: { name: workspaceName } });
       await transaction.workspaceMember.create({
         data: { userId: createdUser.id, workspaceId: workspace.id, role: 'OWNER' },
       });
-      return { ...createdUser, workspace: { id: workspace.id, name: workspace.name } };
+      return { ...createdUser, workspace: { id: workspace.id, name: workspace.name, role: 'OWNER' } };
     });
 
     return { token: createAccessToken(user.id), user: publicUser(user), workspace: user.workspace };
@@ -88,7 +90,7 @@ export const login = async (input: LoginInput) => {
   return {
     token: createAccessToken(user.id),
     user: publicUser(user),
-    workspace: workspaceMembership?.workspace ?? null,
+    workspace: workspaceMembership ? { ...workspaceMembership.workspace, role: workspaceMembership.role } : null,
   };
 };
 
@@ -99,6 +101,7 @@ export const getCurrentUser = async (userId: string) => {
       id: true,
       name: true,
       email: true,
+      platformRole: true,
       memberships: {
         orderBy: { createdAt: 'asc' },
         take: 1,

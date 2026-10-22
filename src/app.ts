@@ -7,7 +7,18 @@ import userRoutes from './routes/users/user.routes.js';
 
 const app = express();
 
-app.use(cors({ origin: process.env.FRONTEND_URL ?? 'http://localhost:3000' }));
+const allowedOrigins = new Set([process.env.FRONTEND_URL ?? 'http://localhost:3000']);
+
+if (process.env.NODE_ENV !== 'production') {
+  for (const port of [3000, 3001]) {
+    allowedOrigins.add(`http://localhost:${port}`);
+    allowedOrigins.add(`http://127.0.0.1:${port}`);
+  }
+}
+
+app.use(cors({
+  origin: (origin, callback) => callback(null, !origin || allowedOrigins.has(origin)),
+}));
 app.use(express.json());
 app.get('/api/health', (_request, response) => {
   response.json({ status: 'ok' });

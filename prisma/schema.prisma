@@ -17,15 +17,22 @@ enum WorkspaceRole {
   MEMBER
 }
 
+enum AuthTokenType {
+  EMAIL_VERIFICATION
+  PASSWORD_RESET
+}
+
 model User {
-  id           String            @id @default(uuid())
-  name         String
-  email        String            @unique
-  passwordHash String
-  platformRole PlatformRole      @default(USER)
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  memberships  WorkspaceMember[]
+  id              String            @id @default(uuid())
+  name            String
+  email           String            @unique
+  passwordHash    String
+  platformRole    PlatformRole      @default(USER)
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  memberships     WorkspaceMember[]
+  emailVerifiedAt DateTime?
+  authTokens      AuthToken[]
 }
 
 model Workspace {
@@ -47,4 +54,16 @@ model WorkspaceMember {
 
   @@unique([userId, workspaceId])
   @@index([workspaceId])
+}
+
+model AuthToken {
+  id        String        @id @default(uuid())
+  userId    String
+  tokenHash String        @unique
+  type      AuthTokenType
+  expiresAt DateTime
+  createdAt DateTime      @default(now())
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, type])
 }

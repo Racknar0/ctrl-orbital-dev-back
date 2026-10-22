@@ -51,7 +51,7 @@ export const createUser = async (input: UserCreateInput) => {
   try {
     return await prisma.$transaction(async (transaction) => {
       const user = await transaction.user.create({
-        data: { name, email, passwordHash, platformRole: input.platformRole },
+        data: { name, email, passwordHash, platformRole: input.platformRole, emailVerifiedAt: new Date() },
         select: { id: true, name: true, email: true, platformRole: true, createdAt: true },
       });
       const workspace = await transaction.workspace.create({

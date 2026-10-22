@@ -31,6 +31,10 @@
 - No hagas `git pull`, compilaciones ni cambios de symlink directamente dentro de `/opt/orbital-ctrl/back` o `/opt/orbital-ctrl/front`; son rutas estables administradas por el despliegue.
 - No muestres, sobrescribas ni subas los `.env` de producción. Si el acceso SSH o los comandos no están disponibles, informa el bloqueo y no simules un despliegue.
 
+## Documentación de modelos (obligatorio)
+- Todos los modelos y enums de Prisma deben llevar comentarios de documentación `///` en español que expliquen su función en el negocio. Documenta también sus campos, relaciones y valores de enums, aclarando permisos, estados, datos sensibles y reglas de conservación o eliminación cuando corresponda.
+- Al crear o modificar un modelo, actualiza sus comentarios en el mismo cambio. Deben describir el comportamiento implementado; no presentar funcionalidades futuras como si ya existieran.
+
 ## Cambios de modelos y migraciones (obligatorio)
 - Cada cambio en modelos o en `prisma/schema.prisma` debe incluir una migración nueva y versionada en `prisma/migrations/`, en el mismo cambio de código. Nunca despliegues un cambio de esquema sin su migración.
 - En desarrollo, genera y aplica la migración con `npm run db:migrate -- --name nombre_descriptivo` y luego ejecuta `npm run db:generate`. Revisa el SQL generado antes de confirmar los cambios.

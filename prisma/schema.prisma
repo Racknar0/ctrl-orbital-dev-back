@@ -7,157 +7,273 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+/// Nivel de acceso global a la plataforma; independiente del rol dentro de cada espacio.
 enum PlatformRole {
+  /// Cuenta con acceso a su propio espacio de trabajo.
   USER
+  /// Cuenta con acceso a la administración de usuarios de la plataforma.
   ADMIN
 }
 
+/// Permisos de una cuenta dentro de un espacio de trabajo específico.
 enum WorkspaceRole {
+  /// Propietario del espacio; tener miembros compartidos bloquea la eliminación de su cuenta en esta fase.
   OWNER
+  /// Integrante del espacio sin propiedad sobre él.
   MEMBER
 }
 
+/// Finalidad de los enlaces de autenticación enviados por correo.
 enum AuthTokenType {
+  /// Permite verificar el correo de una cuenta nueva.
   EMAIL_VERIFICATION
+  /// Permite establecer una contraseña nueva mediante un enlace temporal.
   PASSWORD_RESET
 }
 
+/// Cuenta registrada para iniciar sesión. Las participaciones anónimas en salas rápidas aún no se vinculan a ella.
 model User {
+  /// Identificador interno de la cuenta.
   id              String            @id @default(uuid())
+  /// Nombre mostrado en el perfil y en la administración.
   name            String
+  /// Correo único para iniciar sesión y recibir enlaces de autenticación; se normaliza en el servicio.
   email           String            @unique
+  /// Hash bcrypt de la contraseña; nunca almacena la contraseña original.
   passwordHash    String
+  /// Acceso global como usuario o administrador; no define la propiedad de espacios.
   platformRole    PlatformRole      @default(USER)
+  /// Permite desactivar el acceso conservando los datos de la cuenta.
+  isActive        Boolean           @default(true)
+  /// Versión incluida en el JWT; se incrementa al desactivar para invalidar las sesiones anteriores.
+  sessionVersion  Int               @default(0)
+  /// Fecha de creación de la cuenta.
   createdAt       DateTime          @default(now())
+  /// Última modificación de la cuenta.
   updatedAt       DateTime          @updatedAt
+  /// Espacios a los que pertenece; una cuenta puede participar en varios.
   memberships     WorkspaceMember[]
+  /// Fecha de verificación del correo; null indica que aún no se ha verificado.
   emailVerifiedAt DateTime?
+  /// Enlaces temporales de verificación o recuperación asociados a esta cuenta.
   authTokens      AuthToken[]
 }
 
+/// Espacio de trabajo de una familia, empresa o equipo; puede tener varios usuarios.
 model Workspace {
+  /// Identificador interno del espacio.
   id        String            @id @default(uuid())
+  /// Nombre visible del espacio de trabajo.
   name      String
+  /// Código de la moneda usada por el espacio, por ejemplo COP.
   currency  String            @default("COP")
+  /// Fecha de creación del espacio.
   createdAt DateTime          @default(now())
+  /// Cuentas vinculadas al espacio y sus respectivos roles.
   members   WorkspaceMember[]
 }
 
+/// Une una cuenta con un espacio y define su rol allí; evita duplicar la misma membresía.
 model WorkspaceMember {
+  /// Identificador de la membresía.
   id          String        @id @default(uuid())
+  /// Cuenta que pertenece al espacio.
   userId      String
+  /// Espacio al que pertenece la cuenta.
   workspaceId String
+  /// Permisos de esa cuenta únicamente en este espacio.
   role        WorkspaceRole @default(OWNER)
+  /// Fecha de incorporación al espacio.
   createdAt   DateTime      @default(now())
+  /// Cuenta asociada; al eliminarla se elimina esta membresía.
   user        User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// Espacio asociado; al eliminarlo se elimina esta membresía.
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
 
   @@unique([userId, workspaceId])
   @@index([workspaceId])
 }
 
+/// Credencial temporal de un enlace de correo; no es el JWT de una sesión y se consume al utilizarla.
 model AuthToken {
+  /// Identificador interno del enlace temporal.
   id        String        @id @default(uuid())
+  /// Cuenta a la que pertenece el enlace.
   userId    String
+  /// Hash SHA-256 del token; el valor original solo se envía en el enlace de correo.
   tokenHash String        @unique
+  /// Operación autorizada por el enlace: verificación o recuperación.
   type      AuthTokenType
+  /// Fecha límite para utilizar el enlace.
   expiresAt DateTime
+  /// Fecha de emisión del enlace.
   createdAt DateTime      @default(now())
+  /// Cuenta asociada; sus enlaces se borran al eliminarla.
   user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, type])
 }
 
+/// Cierre explícito de una sala; el vencimiento también bloquea cambios aunque figure OPEN.
 enum QuickRoomStatus {
+  /// Admite cambios mientras no se haya alcanzado expiresAt.
   OPEN
+  /// Sala cerrada por el organizador; permanece disponible para consulta.
   CLOSED
 }
 
+/// Permisos de un participante invitado dentro de una sala rápida.
 enum QuickRoomRole {
+  /// Organizador con permisos de administración de la sala.
   OWNER
+  /// Participante invitado a compartir gastos en la sala.
   MEMBER
 }
 
+/// Estado de un pago manual; la aplicación no ejecuta transferencias bancarias.
 enum QuickRoomSettlementStatus {
+  /// El emisor informó que pagó; falta la confirmación del destinatario.
   REPORTED
+  /// El destinatario confirmó la recepción del pago.
   CONFIRMED
 }
 
+/// Sala rápida para repartir gastos sin registro. Actualmente no pertenece a un User ni a un Workspace.
 model QuickRoom {
+  /// Identificador interno de la sala.
   id             String                 @id @default(uuid())
+  /// Nombre visible del grupo o actividad.
   name           String
+  /// Moneda común de todos los gastos y pagos de la sala.
   currency       String                 @default("COP")
+  /// Código compartido para invitar a nuevos participantes; no sustituye su credencial personal.
   invitationCode String                 @unique
+  /// Estado de cierre explícito de la sala.
   status         QuickRoomStatus        @default(OPEN)
+  /// Vencimiento de la edición; el servicio lo fija a 30 días al crear la sala.
   expiresAt      DateTime
+  /// Fecha del cierre manual; null mientras no se haya cerrado explícitamente.
   closedAt       DateTime?
+  /// Fecha de creación de la sala.
   createdAt      DateTime               @default(now())
+  /// Última modificación de los datos de la sala.
   updatedAt      DateTime               @updatedAt
+  /// Identidades invitadas que participan únicamente en esta sala.
   participants   QuickRoomParticipant[]
+  /// Gastos registrados para repartir entre los participantes.
   expenses       QuickRoomExpense[]
+  /// Pagos manuales reportados entre los participantes.
   settlements    QuickRoomSettlement[]
 }
 
+/// Identidad invitada por sala. La misma persona puede tener participaciones distintas en varias salas.
 model QuickRoomParticipant {
+  /// Identificador de esta participación, independiente de una cuenta registrada.
   id               String                  @id @default(uuid())
+  /// Sala a la que pertenece esta participación.
   roomId           String
+  /// Nombre con el que aparece ante los demás participantes.
   displayName      String
+  /// Permisos de organizador o participante dentro de la sala.
   role             QuickRoomRole           @default(MEMBER)
+  /// Hash de la credencial privada del invitado usada para recuperar su participación.
   guestTokenHash   String                   @unique
+  /// Medio opcional para recibir transferencias, por ejemplo Nequi o Yape.
   paymentMethod    String?
+  /// Número, llave o referencia de cobro opcional visible para los participantes de la sala.
   paymentReference String?
+  /// Nombre opcional del titular del medio de pago.
   paymentHolder    String?
+  /// Fecha de incorporación a la sala.
   createdAt        DateTime                 @default(now())
+  /// Sala asociada; eliminarla elimina también sus participantes.
   room             QuickRoom               @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  /// Gastos cuyo importe adelantó este participante.
   paidExpenses     QuickRoomExpense[]       @relation("QuickRoomPayer")
+  /// Gastos que registró, aunque otra persona haya pagado.
   createdExpenses  QuickRoomExpense[]       @relation("QuickRoomCreator")
+  /// Partes de gastos que le corresponde asumir.
   shares           QuickRoomExpenseShare[]
+  /// Pagos que reportó como emisor.
   sentPayments     QuickRoomSettlement[]    @relation("QuickRoomSender")
+  /// Pagos que recibió y puede confirmar.
   receivedPayments QuickRoomSettlement[]    @relation("QuickRoomReceiver")
 
   @@index([roomId])
 }
 
+/// Gasto de una sala: registra quién adelantó el dinero, quién lo anotó y cómo se reparte.
 model QuickRoomExpense {
+  /// Identificador del gasto.
   id                     String                  @id @default(uuid())
+  /// Sala donde se comparte el gasto.
   roomId                 String
+  /// Participante que adelantó el importe total del gasto.
   paidByParticipantId    String
+  /// Participante que registró el gasto en la aplicación.
   createdByParticipantId String
+  /// Concepto del gasto compartido.
   description            String
+  /// Importe total con dos decimales; el reparto se calcula en centavos exactos.
   amount                 Decimal                 @db.Decimal(14, 2)
+  /// Fecha de registro del gasto.
   createdAt              DateTime                @default(now())
+  /// Última modificación del gasto.
   updatedAt              DateTime                @updatedAt
+  /// Sala asociada; al eliminarla se eliminan sus gastos.
   room                   QuickRoom               @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  /// Identidad del participante que pagó inicialmente.
   paidBy                 QuickRoomParticipant    @relation("QuickRoomPayer", fields: [paidByParticipantId], references: [id])
+  /// Identidad del participante que creó el registro.
   createdBy              QuickRoomParticipant    @relation("QuickRoomCreator", fields: [createdByParticipantId], references: [id])
+  /// Reparto guardado del gasto; la suma de las partes debe coincidir con amount.
   shares                 QuickRoomExpenseShare[]
 
   @@index([roomId])
 }
 
+/// Parte de un gasto asignada a un participante; nuevos invitados no cambian repartos anteriores.
 model QuickRoomExpenseShare {
+  /// Identificador de esta parte del reparto.
   id            String               @id @default(uuid())
+  /// Gasto al que corresponde la parte asignada.
   expenseId     String
+  /// Participante que debe asumir esta parte del gasto.
   participantId String
+  /// Importe asignado a este participante, con dos decimales.
   amount        Decimal              @db.Decimal(14, 2)
+  /// Gasto asociado; al eliminarlo se elimina su reparto.
   expense       QuickRoomExpense     @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  /// Identidad a la que se asignó la parte del gasto.
   participant   QuickRoomParticipant @relation(fields: [participantId], references: [id])
 
   @@unique([expenseId, participantId])
   @@index([participantId])
 }
 
+/// Pago manual entre participantes para saldar cuentas; reportarlo no equivale a confirmarlo.
 model QuickRoomSettlement {
+  /// Identificador del pago reportado.
   id                String                    @id @default(uuid())
+  /// Sala a cuyos saldos corresponde el pago.
   roomId            String
+  /// Participante que informa haber enviado el dinero.
   fromParticipantId String
+  /// Participante destinatario, autorizado para confirmar su recepción.
   toParticipantId   String
+  /// Importe del pago en la moneda de la sala, con dos decimales.
   amount            Decimal                   @db.Decimal(14, 2)
+  /// Indica si el pago está reportado o confirmado por su destinatario.
   status            QuickRoomSettlementStatus  @default(REPORTED)
+  /// Fecha de confirmación; null mientras el destinatario no confirme la recepción.
   confirmedAt       DateTime?
+  /// Fecha en que el emisor reportó el pago.
   createdAt         DateTime                  @default(now())
+  /// Sala asociada; al eliminarla se eliminan sus pagos registrados.
   room              QuickRoom                 @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  /// Identidad del emisor del pago.
   fromParticipant   QuickRoomParticipant      @relation("QuickRoomSender", fields: [fromParticipantId], references: [id])
+  /// Identidad del destinatario del pago.
   toParticipant     QuickRoomParticipant      @relation("QuickRoomReceiver", fields: [toParticipantId], references: [id])
 
   @@index([roomId])

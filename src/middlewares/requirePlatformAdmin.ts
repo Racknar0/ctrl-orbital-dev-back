@@ -12,10 +12,10 @@ export const requirePlatformAdmin: RequestHandler = async (_request, response, n
 
     const user = await prisma.user.findUnique({
       where: { id: userId },
-      select: { platformRole: true },
+      select: { platformRole: true, isActive: true },
     });
 
-    if (user?.platformRole !== PlatformRole.ADMIN) {
+    if (!user?.isActive || user.platformRole !== PlatformRole.ADMIN) {
       response.status(403).json({ message: 'Se requiere una cuenta administradora.' });
       return;
     }

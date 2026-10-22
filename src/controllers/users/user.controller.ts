@@ -1,6 +1,6 @@
 import type { RequestHandler } from 'express';
 import { PlatformRole } from '@prisma/client';
-import { UserManagementError, createUser, listUsers, updateUser } from '../../services/users/user.service.js';
+import { UserManagementError, createUser, deleteUser, listUsers, updateUser } from '../../services/users/user.service.js';
 
 export const listUsersController: RequestHandler = async (_request, response, next) => {
   try {
@@ -36,13 +36,14 @@ export const createUserController: RequestHandler = async (request, response, ne
 
 export const updateUserController: RequestHandler = async (request, response, next) => {
   try {
-    const { name, email, platformRole } = request.body ?? {};
+    const { name, email, platformRole, isActive } = request.body ?? {};
     if (
       (name !== undefined && typeof name !== 'string') ||
       (email !== undefined && typeof email !== 'string') ||
-      (platformRole !== undefined && !Object.values(PlatformRole).includes(platformRole))
+      (platformRole !== undefined && !Object.values(PlatformRole).includes(platformRole)) ||
+      (isActive !== undefined && typeof isActive !== 'boolean')
     ) {
-      response.status(400).json({ message: 'Revisa el nombre, correo y rol enviados.' });
+      response.status(400).json({ message: 'Revisa el nombre, correo, rol y estado enviados.' });
       return;
     }
 
@@ -58,8 +59,31 @@ export const updateUserController: RequestHandler = async (request, response, ne
       return;
     }
 
-    const user = await updateUser(userId, actorUserId, { name, email, platformRole });
+    const user = await updateUser(userId, actorUserId, { name, email, platformRole, isActive });
     response.json({ user });
+  } catch (error) {
+    if (error instanceof UserManagementError) {
+      response.status(error.statusCode).json({ message: error.message });
+      return;
+    }
+    next(error);
+  }
+};
+
+export const deleteUserController: RequestHandler = async (request, response, next) => {
+  try {
+    const userId = Array.isArray(request.params.id) ? request.params.id[0] : request.params.id;
+    const actorUserId = response.locals.userId as string | undefined;
+    if (!actorUserId) {
+      response.status(401).json({ message: 'Inicia sesión para continuar.' });
+      return;
+    }
+    const { emailConfirmation } = request.body ?? {};
+    if (!userId || typeof emailConfirmation !== 'string') {
+      response.status(400).json({ message: 'Envía el identificador y el correo de confirmación del usuario.' });
+      return;
+    }
+    response.json(await deleteUser(userId, actorUserId, emailConfirmation));
   } catch (error) {
     if (error instanceof UserManagementError) {
       response.status(error.statusCode).json({ message: error.message });

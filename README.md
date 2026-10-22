@@ -40,6 +40,15 @@ npm run db:studio
 
 Rutas de acceso: `POST /api/auth/register`, `POST /api/auth/verify-email`, `POST /api/auth/login`, `POST /api/auth/forgot-password`, `POST /api/auth/reset-password` y `GET /api/auth/me` (requiere Bearer token). Las cuentas nuevas deben verificar el correo antes de iniciar sesión; las cuentas existentes se conservan verificadas por la migración.
 
+## Administración del ciclo de vida de usuarios
+
+- `PATCH /api/users/:id` acepta `isActive: false` para desactivar y `isActive: true` para reactivar. Requiere un administrador activo.
+- Desactivar conserva los datos, elimina enlaces pendientes de autenticación e incrementa la versión de sesión. Los JWT previos quedan invalidados incluso después de reactivar; el usuario debe iniciar sesión otra vez.
+- `DELETE /api/users/:id` exige una cuenta desactivada y `{ "emailConfirmation": "correo del usuario" }`. Solo admite cuentas sin membresías o con un único espacio exclusivo del que sean propietarias. Borra la cuenta, sus tokens y su espacio vacío en una transacción.
+- Tener varios espacios, participar como miembro o compartir un espacio bloquea la eliminación, aunque exista otro propietario. La interfaz muestra el motivo y permite desactivar. No se permite eliminar/desactivar la propia cuenta desde administración ni dejar la plataforma sin un administrador activo.
+- Las salas rápidas actuales son anónimas y no tienen relación con `User`; no se borran ni cambian con estas acciones. Aún no existen gastos/deudas vinculados a cuentas: al agregar esa relación, se deben ampliar las comprobaciones de actividad y bloquear la eliminación ante cualquier historial, no solo ante saldos pendientes. La anonimización se evaluará en una fase posterior; no se admite borrado en cascada de registros financieros.
+- La migración `20261025000000_estado_y_sesiones_de_usuarios` agrega `isActive` y `sessionVersion`, con valores iniciales que conservan activas las cuentas y sesiones existentes.
+
 ## Correo con Gmail
 
 Completa en `.env` `SMTP_USER` con la cuenta Gmail y `SMTP_PASS` con su App Password. La cuenta debe tener verificación en dos pasos habilitada. `SMTP_FROM` es opcional y, si queda vacío, se usa `SMTP_USER`. No uses la contraseña normal de Gmail. En producción, cambia `APP_URL` a la URL pública de la aplicación.

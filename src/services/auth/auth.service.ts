@@ -47,7 +47,7 @@ const createAuthToken = async (userId: string, type: AuthTokenType, lifetimeMs: 
 const findValidAuthToken = (token: string, type: AuthTokenType) =>
   prisma.authToken.findFirst({
     where: { tokenHash: hashToken(token), type, expiresAt: { gt: new Date() } },
-    include: { user: { select: { id: true, name: true, email: true, emailVerifiedAt: true } } },
+    include: { user: { select: { id: true, name: true, email: true, emailVerifiedAt: true, isActive: true } } },
   });
 
 const getJwtSecret = (): string => {
@@ -58,8 +58,8 @@ const getJwtSecret = (): string => {
   return secret;
 };
 
-const createAccessToken = (userId: string): string =>
-  jwt.sign({}, getJwtSecret(), { subject: userId, expiresIn: '7d' });
+const createAccessToken = (userId: string, sessionVersion: number): string =>
+  jwt.sign({ sessionVersion }, getJwtSecret(), { subject: userId, expiresIn: '7d' });
 
 const publicUser = (user: { id: string; name: string; email: string; platformRole: PlatformRole }) => ({
   id: user.id,
@@ -139,7 +139,7 @@ export const register = async (input: RegisterInput) => {
 
 export const verifyEmail = async (token: string) => {
   const authToken = await findValidAuthToken(token, AuthTokenType.EMAIL_VERIFICATION);
-  if (!authToken) throw new AuthError('El enlace de verificación no es válido o ya venció.', 400);
+  if (!authToken || !authToken.user.isActive) throw new AuthError('El enlace de verificación no es válido o ya venció.', 400);
 
   await prisma.$transaction(async (transaction) => {
     const consumed = await transaction.authToken.deleteMany({
@@ -165,7 +165,7 @@ export const requestPasswordReset = async (rawEmail: string) => {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  if (!user || !user.emailVerifiedAt) return { message: genericPasswordResetMessage };
+  if (!user || !user.isActive || !user.emailVerifiedAt) return { message: genericPasswordResetMessage };
 
   const token = await createAuthToken(user.id, AuthTokenType.PASSWORD_RESET, passwordResetLifetimeMs);
   try {
@@ -183,7 +183,7 @@ export const requestPasswordReset = async (rawEmail: string) => {
 export const resetPassword = async (token: string, password: string) => {
   if (password.length < 8) throw new AuthError('La contraseña debe tener al menos 8 caracteres.', 400);
   const authToken = await findValidAuthToken(token, AuthTokenType.PASSWORD_RESET);
-  if (!authToken) throw new AuthError('El enlace de recuperación no es válido o ya venció.', 400);
+  if (!authToken || !authToken.user.isActive) throw new AuthError('El enlace de recuperación no es válido o ya venció.', 400);
 
   const passwordHash = await bcrypt.hash(password, 12);
   await prisma.$transaction(async (transaction) => {
@@ -206,6 +206,8 @@ export const login = async (input: LoginInput) => {
     throw new AuthError('Correo o contraseña incorrectos.', 401);
   }
 
+  if (!user.isActive) throw new AuthError('Tu cuenta está desactivada. Contacta al administrador.', 403);
+
   if (!user.emailVerifiedAt) {
     throw new AuthError('Verifica tu correo antes de iniciar sesión.', 403);
   }
@@ -217,7 +219,7 @@ export const login = async (input: LoginInput) => {
   });
 
   return {
-    token: createAccessToken(user.id),
+    token: createAccessToken(user.id, user.sessionVersion),
     user: publicUser(user),
     workspace: workspaceMembership ? { ...workspaceMembership.workspace, role: workspaceMembership.role } : null,
   };
@@ -231,6 +233,7 @@ export const getCurrentUser = async (userId: string) => {
       name: true,
       email: true,
       platformRole: true,
+      isActive: true,
       memberships: {
         orderBy: { createdAt: 'asc' },
         take: 1,
@@ -240,13 +243,22 @@ export const getCurrentUser = async (userId: string) => {
   });
 
   if (!user) throw new AuthError('La cuenta no existe.', 404);
+  if (!user.isActive) throw new AuthError('Tu cuenta está desactivada.', 401);
 
   const { memberships, ...profile } = user;
   return { ...profile, workspace: memberships[0] ? { ...memberships[0].workspace, role: memberships[0].role } : null };
 };
 
-export const verifyAccessToken = (token: string): string => {
+export const verifyAccessToken = async (token: string): Promise<string> => {
   const payload = jwt.verify(token, getJwtSecret());
   if (typeof payload === 'string' || !payload.sub) throw new AuthError('Token inválido.', 401);
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: { isActive: true, sessionVersion: true },
+  });
+  // Los tokens anteriores a esta migración corresponden a la versión inicial (0).
+  if (!user?.isActive || (payload.sessionVersion ?? 0) !== user.sessionVersion) {
+    throw new AuthError('La sesión ya no está disponible. Inicia sesión de nuevo.', 401);
+  }
   return payload.sub;
 };

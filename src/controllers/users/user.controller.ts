@@ -1,11 +1,35 @@
 import type { RequestHandler } from 'express';
 import { PlatformRole } from '@prisma/client';
-import { UserManagementError, listUsers, updateUser } from '../../services/users/user.service.js';
+import { UserManagementError, createUser, listUsers, updateUser } from '../../services/users/user.service.js';
 
 export const listUsersController: RequestHandler = async (_request, response, next) => {
   try {
     response.json({ users: await listUsers() });
   } catch (error) {
+    next(error);
+  }
+};
+
+export const createUserController: RequestHandler = async (request, response, next) => {
+  try {
+    const { name, email, password, platformRole = PlatformRole.USER } = request.body ?? {};
+    if (
+      typeof name !== 'string' ||
+      typeof email !== 'string' ||
+      typeof password !== 'string' ||
+      !Object.values(PlatformRole).includes(platformRole)
+    ) {
+      response.status(400).json({ message: 'Envía nombre, correo, contraseña y un rol válido.' });
+      return;
+    }
+
+    const user = await createUser({ name, email, password, platformRole });
+    response.status(201).json({ user });
+  } catch (error) {
+    if (error instanceof UserManagementError) {
+      response.status(error.statusCode).json({ message: error.message });
+      return;
+    }
     next(error);
   }
 };

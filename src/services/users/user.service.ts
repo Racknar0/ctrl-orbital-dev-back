@@ -1,3 +1,4 @@
+import bcrypt from 'bcrypt';
 import { PlatformRole } from '@prisma/client';
 import { prisma } from '../../utils/prisma.js';
 
@@ -14,6 +15,13 @@ export type UserUpdateInput = {
   platformRole?: PlatformRole;
 };
 
+export type UserCreateInput = {
+  name: string;
+  email: string;
+  password: string;
+  platformRole: PlatformRole;
+};
+
 export const listUsers = async () => {
   const users = await prisma.user.findMany({
     orderBy: { createdAt: 'desc' },
@@ -28,6 +36,39 @@ export const listUsers = async () => {
   });
 
   return users.map(({ _count, ...user }) => ({ ...user, workspaceCount: _count.memberships }));
+};
+
+export const createUser = async (input: UserCreateInput) => {
+  const name = input.name.trim();
+  const email = input.email.trim().toLowerCase();
+
+  if (!name) throw new UserManagementError('El nombre no puede quedar vacío.', 400);
+  if (!/^\S+@\S+\.\S+$/.test(email)) throw new UserManagementError('Escribe un correo válido.', 400);
+  if (input.password.length < 8) throw new UserManagementError('La contraseña debe tener al menos 8 caracteres.', 400);
+
+  const passwordHash = await bcrypt.hash(input.password, 12);
+
+  try {
+    return await prisma.$transaction(async (transaction) => {
+      const user = await transaction.user.create({
+        data: { name, email, passwordHash, platformRole: input.platformRole },
+        select: { id: true, name: true, email: true, platformRole: true, createdAt: true },
+      });
+      const workspace = await transaction.workspace.create({
+        data: { name: `${name} - Espacio`, currency: 'COP' },
+      });
+      await transaction.workspaceMember.create({
+        data: { userId: user.id, workspaceId: workspace.id, role: 'OWNER' },
+      });
+
+      return { ...user, workspaceCount: 1 };
+    });
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'P2002') {
+      throw new UserManagementError('Ya existe una cuenta con ese correo.', 409);
+    }
+    throw error;
+  }
 };
 
 export const updateUser = async (userId: string, actorUserId: string, input: UserUpdateInput) => {
